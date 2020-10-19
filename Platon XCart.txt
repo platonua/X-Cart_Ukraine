@@ -1,0 +1,20 @@
+Platon Payment Gateway X-Cart Connector
+Installation & Configuring
+
+First of all, configure your Platon Callback URL to this one: http://{XCART_URL}/payment/cc_platon_response.php
+
+Then:
+1. Unzip platon_xcart.zip to your local folder.
+2. Go to X-Cart admin panel, choose Tools->Patch/Upgrade from the top menu. 
+3. In "Apply SQL patch" section select the platon_xcart.sql from the archive, click "Apply" and follow the instructions.
+4. Apply the code and template changes:
+4.1. Either select the platon_xcart.diff file from the archive for the "Apply patch" section and follow the instructions.
+4.2. Or just copy the new files into the corresponding directories in your X-Cart installation. The catalog tree is preserved in the "xcart" directory of the archive.
+5. In X-Cart Admin panel choose Settings->Payment methods from the top menu.
+6. Open "Payment Gateways" tab, select "Platon" from the "Payment gateways" drop down list and then click "Add" button.
+7. Click on "Configure" link beneath the "Platon" section on the opened "Payment methods" tab.
+8. Enter your credentials received from Platon (Client key and Password). You can also change the Gateway URL or Preffered Currency if required. Click "Update" button.
+9. Go back to "Payment methods" tab, set to "on" the left checkbox and click on "Apply changes" button if ready.
+
+That's it, enjoy!
+-------------

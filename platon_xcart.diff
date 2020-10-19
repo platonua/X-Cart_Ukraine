@@ -1,0 +1,187 @@
+Index: payment/cc_platon.php
+===================================================================
+--- payment/cc_platon.php	Fri Jul 05 20:17:23 2013
++++ payment/cc_platon.php	Tue Jul 09 01:17:27 2013
+@@ -0,0 +1,93 @@
++<?php
++
++if (!empty($_GET['platon_result']) && !(empty($_GET['order']))) {
++    require './auth.php';
++
++    if (!func_is_active_payment('cc_platon.php'))
++        exit;
++
++    func_pp_debug_log('platon', 'B', $_GET);
++
++    $result = $_GET['platon_result'];
++    $skey = $_GET['order'];
++    if ($result == 'success') {
++
++        $url = "cart.php?mode=order_message&orderids=" . $skey;
++
++        $tmp = explode("\n", chunk_split($url, 254, "\n"));
++        $update_params = array();
++
++        foreach ($tmp as $i => $v) {
++            $update_params['param' . ($i + 1)] = addslashes($v);
++        }
++
++        $trstat = func_query_first_cell("SELECT trstat FROM $sql_tbl[cc_pp3_data] WHERE ref = '" . $skey . "'");
++
++        $oids_tmp = explode('|', $trstat);
++        $oids_tmp[0] = 'CALL';
++
++        $update_params['trstat'] = addslashes(implode('|', $oids_tmp));
++        $update_params['is_callback'] = 'N';
++
++        func_array2update(
++                'cc_pp3_data', $update_params, "ref = '" . $skey . "'"
++        );
++
++        x_session_register('cart');
++
++        $cart = '';
++
++        $bill_output['code'] = 1;
++
++        require($xcart_dir . '/payment/payment_ccview.php');
++    } else {
++        $bill_output['sessid'] = func_query_first_cell("SELECT sessid FROM $sql_tbl[cc_pp3_data] WHERE ref='$skey'");
++        $bill_output['billmes'] .= func_get_langvar_by_name('txt_payment_transaction_is_failed', array(), false, true, true);
++        include $xcart_dir . '/payment/payment_ccend.php';
++    }
++} else {
++
++    if (!defined('XCART_START')) {
++        header("Location: ../");
++        die("Access denied");
++    }
++
++    $result['key'] = $module_params['param01'];
++
++    $ordr = join("-", $secure_oid);
++    db_query("REPLACE INTO $sql_tbl[cc_pp3_data] (ref,sessid,trstat) VALUES ('" . addslashes($ordr) . "','" . $XCARTSESSID . "','GO|" . implode('|', $secure_oid) . "')");
++
++    $result['order'] = $ordr;
++
++    $cb_url = $current_location . '/payment/cc_platon.php';
++    $result['url'] = $cb_url . '?platon_result=success';
++    $result['error_url'] = $cb_url . '?platon_result=error';
++
++    /* Prepare product data for coding */
++    $result['data'] = base64_encode(
++            json_encode(
++                    array(
++                        'amount' => sprintf("%01.2f", $cart['total_cost']),
++                        'name' => 'Order from ' . $config['Company']['company_name'],
++                        'currency' => $module_params['param04']
++                    )
++            )
++    );
++
++    /* Calculation of signature */
++    $sign = md5(
++            strtoupper(
++                    strrev($result['key']) .
++                    strrev($result['data']) .
++                    strrev($result['url']) .
++                    strrev($module_params['param02'])
++            )
++    );
++
++    $result['sign'] = $sign;
++
++
++    func_create_payment_form($module_params['param03'], $result, 'Platon');
++    exit();
++}
++?>
+Index: payment/cc_platon_response.php
+===================================================================
+--- payment/cc_platon_response.php	Fri Jul 05 20:17:51 2013
++++ payment/cc_platon_response.php	Tue Jul 09 01:28:49 2013
+@@ -0,0 +1,51 @@
++<?php
++
++require './auth.php';
++
++if (!func_is_active_payment('cc_platon.php')) {
++    die("ERROR: Payment method is not active");
++}
++
++$callbackParams = $_POST;
++
++func_pp_debug_log('platon', 'C', array('query' => http_build_query($callbackParams)));
++
++$module_params = func_get_pm_params('cc_platon.php');
++
++// generate signature from callback params
++$sign = md5(
++        strtoupper(
++                strrev($callbackParams['email']) .
++                $module_params['param02'] .
++                $callbackParams['order'] .
++                strrev(substr($callbackParams['card'], 0, 6) . substr($callbackParams['card'], -4))
++        )
++);
++
++// verify signature
++if ($callbackParams['sign'] !== $sign) {
++    // answer with fail response
++    die("ERROR: Invalid signature");
++} else {
++    x_load('order');
++    $bill_output['sessid'] = func_query_first_cell("SELECT sessid FROM $sql_tbl[cc_pp3_data] WHERE ref='" . $callbackParams['order'] . "'");
++    // do processing stuff
++    switch ($callbackParams['status']) {
++        case 'SALE':
++            define('STATUS_CHANGE_REF', 2);
++            func_change_order_status(array($callbackParams['order']), 'P');
++            break;
++        case 'REFUND':
++            define('STATUS_CHANGE_REF', 12);
++            func_change_order_status(array($callbackParams['order']), 'B');
++            break;
++        case 'CHARGEBACK':
++            break;
++        default:
++            die("ERROR: Invalid callback data");
++    }
++
++    // answer with success response
++    exit("OK");
++}
++?>
+Index: skin/common_files/payments/cc_platon.tpl
+===================================================================
+--- skin/common_files/payments/cc_platon.tpl	Fri Jul 05 20:18:18 2013
++++ skin/common_files/payments/cc_platon.tpl	Sun Jul 07 23:16:14 2013
+@@ -0,0 +1,28 @@
++<h1>Platon</h1>
++{capture name=dialog}
++<form action="cc_processing.php?cc_processor={$smarty.get.cc_processor|escape:"url"}" method="post">
++
++<table cellspacing="10">
++<tr>
++<td>{$lng.lbl_cc_platon_key}:</td>
++<td><input type="text" name="param01" size="42" value="{$module_data.param01|escape}" /></td>
++</tr>
++<tr>
++<td>{$lng.lbl_cc_platon_password}:</td>
++<td><input type="text" name="param02" size="42" value="{$module_data.param02|escape}" /></td>
++</tr>
++<tr>
++<td>{$lng.lbl_cc_platon_gateway_url}:</td>
++<td><input type="text" name="param03" size="42" value="{$module_data.param03|escape}" /></td>
++</tr>
++<tr>
++<td>{$lng.lbl_cc_platon_currency}:</td>
++<td><input type="text" name="param04" size="10" value="{$module_data.param04|escape}" /></td>
++</tr>
++</table>
++<br /><br />
++<input type="submit" value="{$lng.lbl_update|strip_tags:false|escape}" />
++</form>
++
++{/capture}
++{include file="dialog.tpl" title=$lng.lbl_cc_settings content=$smarty.capture.dialog extra='width="100%"'}
